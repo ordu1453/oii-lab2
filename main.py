@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 # -------------------------------
 # 1. Определяем нечёткие переменные
 # -------------------------------
-e = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'e')   # ошибка расстояния
-de = ctrl.Antecedent(np.arange(-5, 5.1, 0.1), 'de')   # изменение ошибки
-v = ctrl.Consequent(np.arange(0, 101, 1), 'v')        # выход — скорость ведомого (%)
+e = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'e')   
+de = ctrl.Antecedent(np.arange(-5, 5.1, 0.1), 'de')   
+v = ctrl.Consequent(np.arange(0, 101, 1), 'v')        
 
-# Функции принадлежности (перекрывающиеся зоны)
+# Функции принадлежности
 e['NB'] = fuzz.trapmf(e.universe, [-10, -10, -6, -3])
 e['NS'] = fuzz.trimf(e.universe, [-6, -3, 0])
 e['Z']  = fuzz.trimf(e.universe, [-3, 0, 3])
@@ -29,114 +29,57 @@ v['M']  = fuzz.trimf(v.universe, [30, 50, 70])
 v['F']  = fuzz.trimf(v.universe, [60, 75, 90])
 v['VF'] = fuzz.trapmf(v.universe, [80, 90, 100, 100])
 
-# e.view()
-# de.view()
-# v.view()
+e.view()
+de.view()
+# 2. Набор правил (Ларсен)
 
+# Для Ларсена вместо min используем "product" при вычислении активации
+# В skfuzzy нет прямого параметра, поэтому используем метод defuzzify_method='centroid' и product вручную
 
-# 2. Набор правил 
+def larsen_rule(firing_strength, consequent_mf):
+    # Умножаем всю функцию принадлежности на силу активации (product)
+    return firing_strength * consequent_mf
+
+# Создаём "систему вручную"
 rules = [
-    ctrl.Rule(e['NB'] & de['NB'], v['VS']),
-    ctrl.Rule(e['NB'] & de['Z'], v['S']),
-    ctrl.Rule(e['NB'] & de['PB'], v['M']),
-    ctrl.Rule(e['Z']  & de['Z'], v['M']),
-    ctrl.Rule(e['PB'] & de['NB'], v['F']),
-    ctrl.Rule(e['PB'] & de['PB'], v['VF']),
-    ctrl.Rule(e['PS'] & de['PS'], v['F']),
-    ctrl.Rule(e['NS'] & de['NB'], v['S']),
-    ctrl.Rule(e['NS'] & de['Z'], v['M']),
-    ctrl.Rule(e['Z']  & de['PB'], v['F'])
+    (('NB', 'NB'), 'VS'),
+    (('NB', 'Z'), 'S'),
+    (('NB', 'PB'), 'M'),
+    (('Z',  'Z'), 'M'),
+    (('PB', 'NB'), 'F'),
+    (('PB', 'PB'), 'VF'),
+    (('PS', 'PS'), 'F'),
+    (('NS', 'NB'), 'S'),
+    (('NS', 'Z'), 'M'),
+    (('Z',  'PB'), 'F')
 ]
 
-rules[1].view()
+# Пример вычисления для конкретного входа
+e_input = 2.5
+de_input = 4.5
 
-system = ctrl.ControlSystem(rules)
-sim = ctrl.ControlSystemSimulation(system)
+# Фаззификация
+e_level = {key: fuzz.interp_membership(e.universe, e[key].mf, e_input) for key in e.terms.keys()}
+de_level = {key: fuzz.interp_membership(de.universe, de[key].mf, de_input) for key in de.terms.keys()}
 
-sim.input['e'] = 3.5
-sim.input['de'] = 6
-sim.compute()
+print(e_level)
+print(de_level)
 
-print(sim.output['v'])
-e.view(sim = sim)
-de.view(sim = sim)
-v.view(sim = sim)
+# Агрегация (Ларсен)
+output_aggregated = np.zeros_like(v.universe)
+for (e_term, de_term), v_term in rules:
+    firing_strength = e_level[e_term] * de_level[de_term]  # product вместо min
+    output_aggregated = np.fmax(output_aggregated, larsen_rule(firing_strength, v[v_term].mf))
+
+print(firing_strength)
+print(output_aggregated)
+
+# Дефаззификация
+v_output = fuzz.defuzz(v.universe, output_aggregated, 'centroid')
+print("Скорость ведомого:", v_output)
+
+# Визуализация
+plt.figure()
+plt.plot(v.universe, output_aggregated, 'r', linewidth=2)
+v.view()
 plt.show()
-
-
-
-# # -------------------------------
-# # 3. Параметры симуляции
-# # -------------------------------
-# dt = 0.2         # шаг по времени (с)
-# T = 25           # длительность (с)
-# steps = int(T / dt)
-
-# D_ref = 5.0      # желаемая дистанция (м)
-# D = 10.0         # начальная дистанция
-# V_leader = 10.0  # скорость лидера (м/с)
-# V_max = 25.0     # макс. скорость ведомого (м/с)
-# V_follower = 5.0 # начальная скорость ведомого (м/с)
-
-# distances, speeds = [], []
-# times = np.arange(0, T, dt)
-# prev_e = D - D_ref
-
-
-
-# # -------------------------------
-# # 4. Основной цикл
-# # -------------------------------
-# for t in times:
-#     e_input = D - D_ref
-#     de_input = e_input - prev_e
-
-#     # создаём новый симулятор на каждом шаге (иначе ломается)
-#     sim = ctrl.ControlSystemSimulation(system)
-#     sim.input['e'] = np.clip(e_input, -10, 10)
-#     sim.input['de'] = np.clip(de_input, -5, 5)
-
-#     try:
-#         sim.compute()
-#         v_percent = sim.output.get('v', 50.0)
-#     except Exception as err:
-#         print(f"[{t:.1f}s] Ошибка вывода: {err}")
-#         v_percent = 50.0
-
-#     V_follower = (v_percent / 100) * V_max
-#     D += (V_leader - V_follower) * dt
-#     prev_e = e_input
-
-#     distances.append(D)
-#     speeds.append(V_follower)
-
-# # -------------------------------
-# # 5. Графики
-# # -------------------------------
-# plt.figure(figsize=(10,6))
-
-# plt.subplot(2,1,1)
-# plt.plot(times, distances, label='Дистанция D(t)', color='b')
-# plt.axhline(D_ref, color='r', linestyle='--', label='Желаемая дистанция D_ref')
-# plt.ylabel('Расстояние (м)')
-# plt.legend()
-# plt.grid(True)
-
-# plt.subplot(2,1,2)
-# plt.plot(times, speeds, label='Скорость ведомого', color='g')
-# plt.axhline(V_leader, color='r', linestyle='--', label='Скорость лидера')
-# plt.xlabel('Время (с)')
-# plt.ylabel('Скорость (м/с)')
-# plt.legend()
-# plt.grid(True)
-
-# plt.suptitle('Fuzzy Follow (алгоритм Ларсена, X=1)')
-# plt.tight_layout()
-# plt.show()
-
-# # -------------------------------
-# # 6. Оценка качества
-# # -------------------------------
-# error = np.array(distances) - D_ref
-# rmse = np.sqrt(np.mean(error**2))
-# print(f"\nСреднеквадратичная ошибка дистанции: {rmse:.3f} м")
