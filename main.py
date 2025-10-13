@@ -2,84 +2,78 @@ import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
 
 # -------------------------------
 # 1. Определяем нечёткие переменные
 # -------------------------------
-e = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'e')   
-de = ctrl.Antecedent(np.arange(-5, 5.1, 0.1), 'de')   
-v = ctrl.Consequent(np.arange(0, 101, 1), 'v')        
+distance = ctrl.Antecedent(np.arange(0, 101, 1), 'distance')
+v_autopilot = ctrl.Consequent(np.arange(0, 101, 1), 'v_autopilot')
 
-# Функции принадлежности
-e['NB'] = fuzz.trapmf(e.universe, [-10, -10, -6, -3])
-e['NS'] = fuzz.trimf(e.universe, [-6, -3, 0])
-e['Z']  = fuzz.trimf(e.universe, [-3, 0, 3])
-e['PS'] = fuzz.trimf(e.universe, [0, 3, 6])
-e['PB'] = fuzz.trapmf(e.universe, [3, 6, 10, 10])
+# Функции принадлежности для расстояния
+distance['TooClose'] = fuzz.trapmf(distance.universe, [0, 0, 10, 30])
+distance['Safe']     = fuzz.trimf(distance.universe, [20, 50, 80])
+distance['Far']      = fuzz.trapmf(distance.universe, [70, 90, 100, 100])
 
-de['NB'] = fuzz.trapmf(de.universe, [-5, -5, -3, -1.5])
-de['NS'] = fuzz.trimf(de.universe, [-3, -1.5, 0])
-de['Z']  = fuzz.trimf(de.universe, [-1.5, 0, 1.5])
-de['PS'] = fuzz.trimf(de.universe, [0, 1.5, 3])
-de['PB'] = fuzz.trapmf(de.universe, [1.5, 3, 5, 5])
+# Функции принадлежности для скорости
+v_autopilot['Slow']   = fuzz.trapmf(v_autopilot.universe, [0, 0, 20, 40])
+v_autopilot['Medium'] = fuzz.trimf(v_autopilot.universe, [30, 50, 70])
+v_autopilot['Fast']   = fuzz.trapmf(v_autopilot.universe, [60, 80, 100, 100])
 
-v['VS'] = fuzz.trapmf(v.universe, [0, 0, 10, 20])
-v['S']  = fuzz.trimf(v.universe, [10, 25, 40])
-v['M']  = fuzz.trimf(v.universe, [30, 50, 70])
-v['F']  = fuzz.trimf(v.universe, [60, 75, 90])
-v['VF'] = fuzz.trapmf(v.universe, [80, 90, 100, 100])
-
-e.view()
-de.view()
-# 2. Набор правил (Ларсен)
-
-# Для Ларсена вместо min используем "product" при вычислении активации
-# В skfuzzy нет прямого параметра, поэтому используем метод defuzzify_method='centroid' и product вручную
-
-def larsen_rule(firing_strength, consequent_mf):
-    # Умножаем всю функцию принадлежности на силу активации (product)
-    return firing_strength * consequent_mf
-
-# Создаём "систему вручную"
+# Правила Ларсена
 rules = [
-    (('NB', 'NB'), 'VS'),
-    (('NB', 'Z'), 'S'),
-    (('NB', 'PB'), 'M'),
-    (('Z',  'Z'), 'M'),
-    (('PB', 'NB'), 'F'),
-    (('PB', 'PB'), 'VF'),
-    (('PS', 'PS'), 'F'),
-    (('NS', 'NB'), 'S'),
-    (('NS', 'Z'), 'M'),
-    (('Z',  'PB'), 'F')
+    ('TooClose', 'Slow'),
+    ('Safe', 'Medium'),
+    ('Far', 'Fast')
 ]
 
-# Пример вычисления для конкретного входа
-e_input = 2.5
-de_input = 4.5
+def larsen_rule(firing_strength, consequent_mf):
+    return firing_strength * consequent_mf
 
-# Фаззификация
-e_level = {key: fuzz.interp_membership(e.universe, e[key].mf, e_input) for key in e.terms.keys()}
-de_level = {key: fuzz.interp_membership(de.universe, de[key].mf, de_input) for key in de.terms.keys()}
+# -------------------------------
+# 2. Функция расчета скорости автопилота
+# -------------------------------
+def compute_autopilot_speed(dist_input):
+    distance_level = {key: fuzz.interp_membership(distance.universe, distance[key].mf, dist_input)
+                      for key in distance.terms.keys()}
+    
+    output_aggregated = np.zeros_like(v_autopilot.universe)
+    for dist_term, v_term in rules:
+        alpha = distance_level[dist_term]
+        output_aggregated = np.fmax(output_aggregated, larsen_rule(alpha, v_autopilot[v_term].mf))
+    
+    v_output = fuzz.defuzz(v_autopilot.universe, output_aggregated, 'centroid')
+    
+    return v_output, output_aggregated
 
-print(e_level)
-print(de_level)
+# -------------------------------
+# 3. GUI с Tkinter
+# -------------------------------
+def update_graph(val):
+    dist_input = slider.get()
+    v_output, output_aggregated = compute_autopilot_speed(dist_input)
+    
+    ax.clear()
+    ax.plot(v_autopilot.universe, output_aggregated, 'r', linewidth=2)
+    ax.set_title(f"Distance: {dist_input:.1f}, Autopilot speed: {v_output:.2f}")
+    ax.set_xlabel("Autopilot speed")
+    ax.set_ylabel("Membership")
+    canvas.draw()
 
-# Агрегация (Ларсен)
-output_aggregated = np.zeros_like(v.universe)
-for (e_term, de_term), v_term in rules:
-    firing_strength = e_level[e_term] * de_level[de_term]  # product вместо min
-    output_aggregated = np.fmax(output_aggregated, larsen_rule(firing_strength, v[v_term].mf))
+root = tk.Tk()
+root.title("Autopilot Fuzzy Control (Larsen)")
 
-print(firing_strength)
-print(output_aggregated)
+slider = tk.Scale(root, from_=0, to=100, orient=tk.HORIZONTAL,
+                  length=400, label='Distance to leader', command=update_graph)
+slider.set(50)
+slider.pack()
 
-# Дефаззификация
-v_output = fuzz.defuzz(v.universe, output_aggregated, 'centroid')
-print("Скорость ведомого:", v_output)
+fig, ax = plt.subplots(figsize=(6,3))
+canvas = FigureCanvasTkAgg(fig, master=root)
+canvas.get_tk_widget().pack()
 
-# Визуализация
-plt.figure()
-plt.plot(v.universe, output_aggregated, 'r', linewidth=2)
-v.view()
-plt.show()
+# Инициализация графика
+update_graph(slider.get())
+
+root.mainloop()
