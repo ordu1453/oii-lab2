@@ -63,22 +63,57 @@ consysSim = ctrl.ControlSystemSimulation(consys)
 # tipping.input['quality'] = 6.5
 # tipping.input['service'] = 9.8
 
-consysSim.input['distance'] = 20
-consysSim.input['change of distance'] = 10
+# --- Параметры моделирования ---
+dt = 0.01
+time = 10   # секунд
+steps = int(time / dt)
 
-# # Crunch the numbers
-# tipping.compute()
+x_l = 100
+v_l = 80     # скорость лидера
+x_a = 0
+v_a = 0
+s = x_l - x_a
+last_s = s
 
-consysSim.compute()
+# --- Списки для сохранения ---
+t_list = []
+x_a_list = []
+x_l_list = []
+v_a_list = []
 
-# Example
-# print tipping.output['tip']
-# tip.view(sim=tipping)
+for i in range(steps):
+    t = i * dt
 
-print(consysSim.output['v_autopilot'])
+    # обновляем координаты
+    x_l += v_l * dt
+    x_a += v_a * dt
 
-v_autopilot.view(sim=consysSim)
+    last_s = s
+    s = abs(x_l - x_a)
+    ds = abs(s - last_s)
 
+    # нечёткий контроллер
+    consysSim.input['distance'] = s
+    consysSim.input['change of distance'] = ds
+    consysSim.compute()
+
+    v_a = consysSim.output['v_autopilot']  # новая скорость автопилота
+
+    # сохраняем данные
+    t_list.append(t)
+    x_a_list.append(x_a)
+    x_l_list.append(x_l)
+    v_a_list.append(v_a)
+
+# --- Построение графиков ---
+plt.figure(figsize=(10,5))
+plt.plot(t_list, x_a_list, label='x_a (автопилот)')
+plt.plot(t_list, x_l_list, label='x_l (лидер)')
+plt.xlabel('Время (с)')
+plt.ylabel('Координата')
+plt.title('Изменение координат x_a и x_l')
+plt.legend()
+plt.grid(True)
 plt.show()
 
 
