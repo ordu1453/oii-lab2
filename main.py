@@ -3,105 +3,109 @@ import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
 
-# --- Определение нечёткой системы ---
-distance_to_leader = ctrl.Antecedent(np.arange(-100, 101, 1), 'distance')
-change_of_distance = ctrl.Antecedent(np.arange(-20, 21, 1), 'change of distance')
-v_autopilot = ctrl.Consequent(np.arange(0, 140, 1), 'v_autopilot')
+# === 1. Создание нечётких переменных ===
+error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'error')
+delta = ctrl.Antecedent(np.arange(-2, 2.1, 0.1), 'delta')
+speed = ctrl.Consequent(np.arange(0, 20.1, 0.1), 'speed')
 
-# Функции принадлежности расстояния (теперь учитывают отрицательные значения)
-distance_to_leader['Behind']   = fuzz.trapmf(distance_to_leader.universe, [-100, -100, -30, -5])  # автопилот позади
-distance_to_leader['Close']    = fuzz.trimf(distance_to_leader.universe, [-10, 0, 10])            # рядом
-distance_to_leader['Ahead']    = fuzz.trapmf(distance_to_leader.universe, [5, 30, 100, 100])      # автопилот впереди
+# === 2. Функции принадлежности ===
+error['too_close'] = fuzz.trapmf(error.universe, [-10, -10, -6, -2])
+error['normal'] = fuzz.trimf(error.universe, [-3, 0, 3])
+error['far'] = fuzz.trapmf(error.universe, [2, 6, 10, 10])
 
-# --- Изменение расстояния ---
-change_of_distance['Closing'] = fuzz.trapmf(change_of_distance.universe, [-2, -2, -0.5, 0])
-change_of_distance['Stable']  = fuzz.trimf(change_of_distance.universe, [-0.2, 0, 0.2])
-change_of_distance['Opening'] = fuzz.trapmf(change_of_distance.universe, [0, 0.5, 2, 2])
+delta['approaching'] = fuzz.trapmf(delta.universe, [-2, -2, -0.5, 0])
+delta['steady'] = fuzz.trimf(delta.universe, [-0.3, 0, 0.3])
+delta['moving_away'] = fuzz.trapmf(delta.universe, [0, 0.5, 2, 2])
 
-# Функции принадлежности скорости автопилота
-v_autopilot['Slow']   = fuzz.trapmf(v_autopilot.universe, [0, 0, 40, 80])
-v_autopilot['Medium'] = fuzz.trimf(v_autopilot.universe, [70, 90, 120])
-v_autopilot['Fast']   = fuzz.trapmf(v_autopilot.universe, [100, 120, 140, 140])
+speed['slow'] = fuzz.trapmf(speed.universe, [0, 0, 2, 6])
+speed['medium'] = fuzz.trimf(speed.universe, [4, 8, 12])
+speed['fast'] = fuzz.trapmf(speed.universe, [10, 14, 20, 20])
 
-# --- Правила ---
-rule1 = ctrl.Rule(distance_to_leader['Behind'] & change_of_distance['Opening'], v_autopilot['Fast'])
-rule2 = ctrl.Rule(distance_to_leader['Behind'] & change_of_distance['Stable'], v_autopilot['Fast'])
-rule3 = ctrl.Rule(distance_to_leader['Behind'] & change_of_distance['Closing'], v_autopilot['Medium'])
+# === 3. Нечёткие правила ===
+rules = [
+    ctrl.Rule(error['too_close'] & delta['approaching'], speed['slow']),
+    ctrl.Rule(error['too_close'] & delta['steady'], speed['slow']),
+    ctrl.Rule(error['too_close'] & delta['moving_away'], speed['medium']),
+    ctrl.Rule(error['normal'] & delta['approaching'], speed['slow']),
+    ctrl.Rule(error['normal'] & delta['steady'], speed['medium']),
+    ctrl.Rule(error['normal'] & delta['moving_away'], speed['fast']),
+    ctrl.Rule(error['far'] & delta['approaching'], speed['medium']),
+    ctrl.Rule(error['far'] & delta['steady'], speed['fast']),
+    ctrl.Rule(error['far'] & delta['moving_away'], speed['fast']),
+]
 
-rule4 = ctrl.Rule(distance_to_leader['Close'] & change_of_distance['Stable'], v_autopilot['Medium'])
-rule5 = ctrl.Rule(distance_to_leader['Close'] & change_of_distance['Closing'], v_autopilot['Slow'])
-rule6 = ctrl.Rule(distance_to_leader['Close'] & change_of_distance['Opening'], v_autopilot['Medium'])
+system = ctrl.ControlSystem(rules)
 
-rule7 = ctrl.Rule(distance_to_leader['Ahead'] & change_of_distance['Stable'], v_autopilot['Slow'])
-rule8 = ctrl.Rule(distance_to_leader['Ahead'] & change_of_distance['Closing'], v_autopilot['Slow'])
-rule9 = ctrl.Rule(distance_to_leader['Ahead'] & change_of_distance['Opening'], v_autopilot['Medium'])
-
-consys = ctrl.ControlSystem([
-    rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, rule9
-])
-consysSim = ctrl.ControlSystemSimulation(consys)
-
-# --- Параметры моделирования ---
+# === 4. Моделирование движения ===
 dt = 0.1
-time = 10   # секунд
-steps = int(time / dt)
+T = 600
+time = np.arange(0, T, dt)
 
-x_l = 20
-v_l = 40     # скорость лидера
-x_a = 0
-v_a = 0
-s = x_l - x_a
-last_s = s
+v_leader = np.zeros_like(time)
+v_auto = np.zeros_like(time)
+x_leader = np.zeros_like(time)
+x_auto = np.zeros_like(time)
+error_list = np.zeros_like(time)
 
-# --- Списки для сохранения ---
-t_list = []
-x_a_list = []
-x_l_list = []
-v_a_list = []
-s_list = []
+x_leader[0] = 0
+x_auto[0] = -10
+v_auto[0] = 5
+v_leader[0] = 6
+desired_distance = 10
 
-for i in range(steps):
-    t = i * dt
+for i in range(1, len(time)):
+    # Лидер случайно меняет скорость
+    v_leader[i] = max(0, v_leader[i-1] + np.random.uniform(-0.6, 0.6))
+    # v_leader[i] = 6
+    x_leader[i] = x_leader[i-1] + v_leader[i] * dt
 
-    # обновляем координаты
-    x_l += v_l * dt
-    x_a += v_a * dt
+    # Расчёт ошибки
+    distance = x_leader[i] - x_auto[i-1]
+    e = distance - desired_distance
+    de = (e - error_list[i-1]) / dt if i > 1 else 0
 
-    last_s = s
-    s = x_l - x_a  # теперь может быть отрицательным
-    ds = s - last_s  # изменение расстояния (может быть отрицательным)
+    # === безопасное вычисление нечёткого вывода ===
+    sim = ctrl.ControlSystemSimulation(system)
+    sim.input['error'] = np.clip(e, -10, 10)
+    sim.input['delta'] = np.clip(de, -2, 2)
 
-    # нечёткий контроллер
-    consysSim.input['distance'] = s
-    consysSim.input['change of distance'] = ds
-    consysSim.compute()
+    try:
+        sim.compute()
+        v_auto[i] = sim.output['speed']
+    except KeyError:
+        # если система не смогла вычислить значение
+        v_auto[i] = v_auto[i-1]
 
-    v_a = consysSim.output['v_autopilot']  # новая скорость автопилота
+    # Обновление позиции
+    x_auto[i] = x_auto[i-1] + v_auto[i] * dt
+    error_list[i] = e
 
-    # сохраняем данные
-    t_list.append(t)
-    x_a_list.append(x_a)
-    x_l_list.append(x_l)
-    v_a_list.append(v_a)
-    s_list.append(s)
+# === 5. Визуализация ===
+plt.figure(figsize=(12, 6))
 
-# --- Графики ---
-plt.figure(figsize=(10, 6))
+# X-координаты
 plt.subplot(2, 1, 1)
-plt.plot(t_list, x_a_list, label='x_a (автопилот)')
-plt.plot(t_list, x_l_list, label='x_l (лидер)')
-plt.ylabel('Координата')
-plt.title('Изменение координат x_a и x_l')
+plt.plot(time, x_leader, label='Лидер', linewidth=2)
+plt.plot(time, x_auto, label='Автопилот', linewidth=2)
+plt.title('Координаты автомобилей')
+plt.xlabel('Время, с')
+plt.ylabel('X, м')
 plt.legend()
 plt.grid(True)
 
+# Ошибка дистанции
 plt.subplot(2, 1, 2)
-plt.plot(t_list, s_list, label='Расстояние (s = x_l - x_a)')
-plt.axhline(0, color='k', linestyle='--')
-plt.xlabel('Время (с)')
-plt.ylabel('Расстояние')
+plt.plot(time, error_list, color='red', label='Ошибка дистанции')
+plt.axhline(0, color='black', linestyle='--')
+plt.title('Ошибка поддержания дистанции')
+plt.xlabel('Время, с')
+plt.ylabel('Ошибка (м)')
 plt.legend()
 plt.grid(True)
 
 plt.tight_layout()
 plt.show()
+
+# Среднеквадратичная ошибка
+mse = np.mean(error_list**2)
+print(f"Среднеквадратичная ошибка дистанции: {mse:.3f}")
