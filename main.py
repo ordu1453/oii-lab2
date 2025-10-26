@@ -55,6 +55,10 @@ v_auto[0] = 5
 v_leader[0] = 6
 desired_distance = 10
 
+# Интегратор
+integral_error = 0.0
+k_i = 10  # коэффициент интеграла — можно подбирать
+
 for i in range(1, len(time)):
     # Скорость лидера
     v_leader[i] = 6
@@ -67,18 +71,20 @@ for i in range(1, len(time)):
     # Ошибки
     distance = x_leader[i] - x_auto[i-1]
     e = distance - desired_distance
-    de = (e - error_list[i-1]) / dt if i > 1 else 0
+    integral_error += e * dt
+    e_total = e + k_i * integral_error  # суммарная ошибка с интегральным эффектом
+    de = (e_total - error_list[i-1]) / dt if i > 1 else 0
 
     # --- Фаззификация ---
-    mu_error = {label: fuzz.interp_membership(error, mf, np.clip(e, -10, 10)) for label, mf in error_mfs.items()}
+    mu_error = {label: fuzz.interp_membership(error, mf, np.clip(e_total, -10, 10)) for label, mf in error_mfs.items()}
     mu_delta = {label: fuzz.interp_membership(delta, mf, np.clip(de, -2, 2)) for label, mf in delta_mfs.items()}
 
     # --- Импликация Ларсена с α = product ---
     aggregated = np.zeros_like(speed)
     for err_label, d_label, s_label in rules:
-        alpha = mu_error[err_label] * mu_delta[d_label]  # <-- изменено: произведение вместо min()
-        implied = alpha * speed_mfs[s_label]             # Larsen implication
-        aggregated = np.fmax(aggregated, implied)        # объединение правил (max)
+        alpha = mu_error[err_label] * mu_delta[d_label]
+        implied = alpha * speed_mfs[s_label]
+        aggregated = np.fmax(aggregated, implied)
 
     # --- Дефаззификация ---
     try:
@@ -86,8 +92,9 @@ for i in range(1, len(time)):
     except:
         v_auto[i] = v_auto[i-1]
 
+    # Обновление позиции
     x_auto[i] = x_auto[i-1] + v_auto[i] * dt
-    error_list[i] = abs(e)
+    error_list[i] = e
 
 # --- Графики ---
 plt.figure(figsize=(12, 6))
