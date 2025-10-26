@@ -3,12 +3,10 @@ import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
 
-# === 1. Создание нечётких переменных ===
 error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'error')
 delta = ctrl.Antecedent(np.arange(-2, 2.1, 0.1), 'delta')
 speed = ctrl.Consequent(np.arange(0, 20.1, 0.1), 'speed')
 
-# === 2. Функции принадлежности ===
 error['too_close'] = fuzz.trapmf(error.universe, [-10, -10, -6, -2])
 error['normal'] = fuzz.trimf(error.universe, [-3, 0, 3])
 error['far'] = fuzz.trapmf(error.universe, [2, 6, 10, 10])
@@ -21,7 +19,8 @@ speed['slow'] = fuzz.trapmf(speed.universe, [0, 0, 2, 6])
 speed['medium'] = fuzz.trimf(speed.universe, [4, 8, 12])
 speed['fast'] = fuzz.trapmf(speed.universe, [10, 14, 20, 20])
 
-# === 3. Нечёткие правила ===
+speed.view()
+
 rules = [
     ctrl.Rule(error['too_close'] & delta['approaching'], speed['slow']),
     ctrl.Rule(error['too_close'] & delta['steady'], speed['slow']),
@@ -36,9 +35,8 @@ rules = [
 
 system = ctrl.ControlSystem(rules)
 
-# === 4. Моделирование движения ===
 dt = 0.1
-T = 600
+T = 100
 time = np.arange(0, T, dt)
 
 v_leader = np.zeros_like(time)
@@ -55,16 +53,18 @@ desired_distance = 10
 
 for i in range(1, len(time)):
     # Лидер случайно меняет скорость
-    v_leader[i] = max(0, v_leader[i-1] + np.random.uniform(-0.6, 0.6))
-    # v_leader[i] = 6
+    # v_leader[i] = max(0, v_leader[i-1] + np.random.uniform(-0.1, 0.1))
+    v_leader[i] = 5
+    if time[i] > 30 and time[i] <60:
+        v_leader[i] = 7
+    elif time[i] > 60:
+        v_leader[i] = 11 
     x_leader[i] = x_leader[i-1] + v_leader[i] * dt
 
-    # Расчёт ошибки
     distance = x_leader[i] - x_auto[i-1]
     e = distance - desired_distance
     de = (e - error_list[i-1]) / dt if i > 1 else 0
 
-    # === безопасное вычисление нечёткого вывода ===
     sim = ctrl.ControlSystemSimulation(system)
     sim.input['error'] = np.clip(e, -10, 10)
     sim.input['delta'] = np.clip(de, -2, 2)
@@ -73,14 +73,11 @@ for i in range(1, len(time)):
         sim.compute()
         v_auto[i] = sim.output['speed']
     except KeyError:
-        # если система не смогла вычислить значение
         v_auto[i] = v_auto[i-1]
 
-    # Обновление позиции
     x_auto[i] = x_auto[i-1] + v_auto[i] * dt
-    error_list[i] = e
+    error_list[i] = abs(e)
 
-# === 5. Визуализация ===
 plt.figure(figsize=(12, 6))
 
 # X-координаты
@@ -106,6 +103,5 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# Среднеквадратичная ошибка
 mse = np.mean(error_list**2)
 print(f"Среднеквадратичная ошибка дистанции: {mse:.3f}")
