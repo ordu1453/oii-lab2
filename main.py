@@ -1,27 +1,26 @@
 import numpy as np
 import skfuzzy as fuzz
-from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
 
 # --- Определение переменных ---
-error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'error')
-delta = ctrl.Antecedent(np.arange(-2, 2.1, 0.1), 'delta')
-speed = ctrl.Consequent(np.arange(0, 20.1, 0.1), 'speed')
+error = np.arange(-10, 10.1, 0.1)
+delta = np.arange(-2, 2.1, 0.1)
+speed = np.arange(0, 20.1, 0.1)
 
 # --- Функции принадлежности ---
-error['too_close'] = fuzz.trapmf(error.universe, [-10, -10, -6, -2])
-error['normal'] = fuzz.trimf(error.universe, [-3, 0, 3])
-error['far'] = fuzz.trapmf(error.universe, [2, 6, 10, 10])
+error_too_close = fuzz.trapmf(error, [-10, -10, -6, -2])
+error_normal = fuzz.trimf(error, [-3, 0, 3])
+error_far = fuzz.trapmf(error, [2, 6, 10, 10])
 
-delta['approaching'] = fuzz.trapmf(delta.universe, [-2, -2, -0.5, 0])
-delta['steady'] = fuzz.trimf(delta.universe, [-0.3, 0, 0.3])
-delta['moving_away'] = fuzz.trapmf(delta.universe, [0, 0.5, 2, 2])
+delta_approaching = fuzz.trapmf(delta, [-2, -2, -0.5, 0])
+delta_steady = fuzz.trimf(delta, [-0.3, 0, 0.3])
+delta_moving_away = fuzz.trapmf(delta, [0, 0.5, 2, 2])
 
-speed['slow'] = fuzz.trapmf(speed.universe, [0, 0, 2, 6])
-speed['medium'] = fuzz.trimf(speed.universe, [4, 8, 12])
-speed['fast'] = fuzz.trapmf(speed.universe, [10, 14, 20, 20])
+speed_slow = fuzz.trapmf(speed, [0, 0, 2, 6])
+speed_medium = fuzz.trimf(speed, [4, 8, 12])
+speed_fast = fuzz.trapmf(speed, [10, 14, 20, 20])
 
-# --- Определение правил ---
+# --- Правила ---
 rules = [
     ('too_close', 'approaching', 'slow'),
     ('too_close', 'steady', 'slow'),
@@ -34,7 +33,12 @@ rules = [
     ('far', 'moving_away', 'fast'),
 ]
 
-# --- Симуляция системы ---
+# --- Универсумы и словари функций ---
+error_mfs = {'too_close': error_too_close, 'normal': error_normal, 'far': error_far}
+delta_mfs = {'approaching': delta_approaching, 'steady': delta_steady, 'moving_away': delta_moving_away}
+speed_mfs = {'slow': speed_slow, 'medium': speed_medium, 'fast': speed_fast}
+
+# --- Симуляция ---
 dt = 0.1
 T = 100
 time = np.arange(0, T, dt)
@@ -53,11 +57,11 @@ desired_distance = 10
 
 for i in range(1, len(time)):
     # Скорость лидера
-    v_leader[i] = 5
+    v_leader[i] = 6
     if 30 < time[i] < 60:
-        v_leader[i] = 7
-    elif time[i] > 60:
         v_leader[i] = 11
+    elif time[i] > 60:
+        v_leader[i] = 6
     x_leader[i] = x_leader[i-1] + v_leader[i] * dt
 
     # Ошибки
@@ -65,23 +69,20 @@ for i in range(1, len(time)):
     e = distance - desired_distance
     de = (e - error_list[i-1]) / dt if i > 1 else 0
 
-    # --- Fuzzy inference по Ларсену ---
-    mu_error = {label: fuzz.interp_membership(error.universe, error[label].mf, np.clip(e, -10, 10)) 
-                for label in error.terms}
-    mu_delta = {label: fuzz.interp_membership(delta.universe, delta[label].mf, np.clip(de, -2, 2)) 
-                for label in delta.terms}
+    # --- Фаззификация ---
+    mu_error = {label: fuzz.interp_membership(error, mf, np.clip(e, -10, 10)) for label, mf in error_mfs.items()}
+    mu_delta = {label: fuzz.interp_membership(delta, mf, np.clip(de, -2, 2)) for label, mf in delta_mfs.items()}
 
-    aggregated = np.zeros_like(speed.universe)
-
+    # --- Импликация Ларсена с α = product ---
+    aggregated = np.zeros_like(speed)
     for err_label, d_label, s_label in rules:
-        alpha = min(mu_error[err_label], mu_delta[d_label])
-        # Larsen implication: multiply membership function by firing strength
-        implied = alpha * speed[s_label].mf
-        aggregated = np.fmax(aggregated, implied)
+        alpha = mu_error[err_label] * mu_delta[d_label]  # <-- изменено: произведение вместо min()
+        implied = alpha * speed_mfs[s_label]             # Larsen implication
+        aggregated = np.fmax(aggregated, implied)        # объединение правил (max)
 
-    # Дефаззификация (центроид)
+    # --- Дефаззификация ---
     try:
-        v_auto[i] = fuzz.defuzz(speed.universe, aggregated, 'centroid')
+        v_auto[i] = fuzz.defuzz(speed, aggregated, 'centroid')
     except:
         v_auto[i] = v_auto[i-1]
 
