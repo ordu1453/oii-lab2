@@ -3,10 +3,12 @@ import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
 
+# --- Определение переменных ---
 error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'error')
 delta = ctrl.Antecedent(np.arange(-2, 2.1, 0.1), 'delta')
 speed = ctrl.Consequent(np.arange(0, 20.1, 0.1), 'speed')
 
+# --- Функции принадлежности ---
 error['too_close'] = fuzz.trapmf(error.universe, [-10, -10, -6, -2])
 error['normal'] = fuzz.trimf(error.universe, [-3, 0, 3])
 error['far'] = fuzz.trapmf(error.universe, [2, 6, 10, 10])
@@ -19,22 +21,20 @@ speed['slow'] = fuzz.trapmf(speed.universe, [0, 0, 2, 6])
 speed['medium'] = fuzz.trimf(speed.universe, [4, 8, 12])
 speed['fast'] = fuzz.trapmf(speed.universe, [10, 14, 20, 20])
 
-speed.view()
-
+# --- Определение правил ---
 rules = [
-    ctrl.Rule(error['too_close'] & delta['approaching'], speed['slow']),
-    ctrl.Rule(error['too_close'] & delta['steady'], speed['slow']),
-    ctrl.Rule(error['too_close'] & delta['moving_away'], speed['medium']),
-    ctrl.Rule(error['normal'] & delta['approaching'], speed['slow']),
-    ctrl.Rule(error['normal'] & delta['steady'], speed['medium']),
-    ctrl.Rule(error['normal'] & delta['moving_away'], speed['fast']),
-    ctrl.Rule(error['far'] & delta['approaching'], speed['medium']),
-    ctrl.Rule(error['far'] & delta['steady'], speed['fast']),
-    ctrl.Rule(error['far'] & delta['moving_away'], speed['fast']),
+    ('too_close', 'approaching', 'slow'),
+    ('too_close', 'steady', 'slow'),
+    ('too_close', 'moving_away', 'medium'),
+    ('normal', 'approaching', 'slow'),
+    ('normal', 'steady', 'medium'),
+    ('normal', 'moving_away', 'fast'),
+    ('far', 'approaching', 'medium'),
+    ('far', 'steady', 'fast'),
+    ('far', 'moving_away', 'fast'),
 ]
 
-system = ctrl.ControlSystem(rules)
-
+# --- Симуляция системы ---
 dt = 0.1
 T = 100
 time = np.arange(0, T, dt)
@@ -52,35 +52,45 @@ v_leader[0] = 6
 desired_distance = 10
 
 for i in range(1, len(time)):
-    # Лидер случайно меняет скорость
-    # v_leader[i] = max(0, v_leader[i-1] + np.random.uniform(-0.1, 0.1))
+    # Скорость лидера
     v_leader[i] = 5
-    if time[i] > 30 and time[i] <60:
+    if 30 < time[i] < 60:
         v_leader[i] = 7
     elif time[i] > 60:
-        v_leader[i] = 11 
+        v_leader[i] = 11
     x_leader[i] = x_leader[i-1] + v_leader[i] * dt
 
+    # Ошибки
     distance = x_leader[i] - x_auto[i-1]
     e = distance - desired_distance
     de = (e - error_list[i-1]) / dt if i > 1 else 0
 
-    sim = ctrl.ControlSystemSimulation(system)
-    sim.input['error'] = np.clip(e, -10, 10)
-    sim.input['delta'] = np.clip(de, -2, 2)
+    # --- Fuzzy inference по Ларсену ---
+    mu_error = {label: fuzz.interp_membership(error.universe, error[label].mf, np.clip(e, -10, 10)) 
+                for label in error.terms}
+    mu_delta = {label: fuzz.interp_membership(delta.universe, delta[label].mf, np.clip(de, -2, 2)) 
+                for label in delta.terms}
 
+    aggregated = np.zeros_like(speed.universe)
+
+    for err_label, d_label, s_label in rules:
+        alpha = min(mu_error[err_label], mu_delta[d_label])
+        # Larsen implication: multiply membership function by firing strength
+        implied = alpha * speed[s_label].mf
+        aggregated = np.fmax(aggregated, implied)
+
+    # Дефаззификация (центроид)
     try:
-        sim.compute()
-        v_auto[i] = sim.output['speed']
-    except KeyError:
+        v_auto[i] = fuzz.defuzz(speed.universe, aggregated, 'centroid')
+    except:
         v_auto[i] = v_auto[i-1]
 
     x_auto[i] = x_auto[i-1] + v_auto[i] * dt
     error_list[i] = abs(e)
 
+# --- Графики ---
 plt.figure(figsize=(12, 6))
 
-# X-координаты
 plt.subplot(2, 1, 1)
 plt.plot(time, x_leader, label='Лидер', linewidth=2)
 plt.plot(time, x_auto, label='Автопилот', linewidth=2)
@@ -90,7 +100,6 @@ plt.ylabel('X, м')
 plt.legend()
 plt.grid(True)
 
-# Ошибка дистанции
 plt.subplot(2, 1, 2)
 plt.plot(time, error_list, color='red', label='Ошибка дистанции')
 plt.axhline(0, color='black', linestyle='--')
