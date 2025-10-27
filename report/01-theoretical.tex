@@ -1,0 +1,107 @@
+\chapter{Теоретическая часть}
+
+\section{Постановка задачи}
+
+В одномерном пространстве (\( X=1 \)) рассматриваются два автомобиля: лидер, управляемый пользователем, и автомобиль-автопилот.  
+Автопилот должен следовать за лидером, поддерживая постоянную дистанцию \( D_{жел} \), не имея информации о скорости лидера.  
+Известно только текущее расстояние между автомобилями.  
+Требуется определить необходимую скорость автопилота \( v_{auto} \) на основе нечеткого логического вывода.
+
+Определение ускорения запрещено.  
+Входными переменными являются:
+\begin{itemize}
+    \item ошибка по расстоянию \( e = D_{тек} - D_{жел} \);
+    \item изменение ошибки \( \Delta e = \frac{de}{dt} \).
+\end{itemize}
+
+Выходная переменная — скорость автопилота \( v_{auto} \).
+
+\section{Этапы нечеткого логического вывода}
+
+Нечеткий логический вывод состоит из следующих этапов:
+
+\begin{enumerate}
+    \item \textbf{Фаззификация} — преобразование четких входных значений \( e \) и \( \Delta e \) в степени принадлежности нечетким подмножествам.
+    \item \textbf{Применение базы правил} — вычисление степени активации каждого правила на основе входных значений.
+    \item \textbf{Импликация} — формирование выходных нечетких множеств в соответствии с вычисленной степенью активации \(\alpha\).
+    \item \textbf{Агрегация} — объединение всех выходных множеств.
+    \item \textbf{Дефаззификация} — преобразование агрегированного нечеткого множества в четкое значение \( v_{auto} \).
+\end{enumerate}
+
+\section{Функции принадлежности}
+
+Для входных и выходных переменных были выбраны следующие функции принадлежности (рис.~\ref{img:membership}):
+
+\begin{itemize}
+    \item Ошибка расстояния \texttt{error}: \texttt{too\_close}, \texttt{normal}, \texttt{far};
+    \item Изменение ошибки \texttt{delta}: \texttt{approaching}, \texttt{steady}, \texttt{moving\_away};
+    \item Скорость \texttt{speed}: \texttt{slow}, \texttt{medium}, \texttt{fast}.
+\end{itemize}
+
+Для задания функций использовались трапециевидные и треугольные формы:
+\begin{align*}
+\texttt{trapmf}(x; a,b,c,d) &= 
+\begin{cases}
+0, & x < a,\\
+\frac{x-a}{b-a}, & a \le x < b,\\
+1, & b \le x \le c,\\
+\frac{d-x}{d-c}, & c < x < d,\\
+0, & x \ge d,
+\end{cases}\\
+\texttt{trimf}(x; a,b,c) &= 
+\begin{cases}
+0, & x < a,\\
+\frac{x-a}{b-a}, & a \le x < b,\\
+\frac{c-x}{c-b}, & b \le x < c,\\
+0, & x \ge c.
+\end{cases}
+\end{align*}
+
+% \includeimage
+%     {membership_example}
+%     {f}
+%     {h}
+%     {0.75\textwidth}
+%     {Пример функций принадлежности для переменных error, delta и speed}
+
+\section{База правил}
+
+Правила нечеткого вывода описывают зависимость между ошибками и требуемой скоростью:
+
+\begin{enumerate}
+    \item ЕСЛИ error = too\_close И delta = approaching ТО speed = slow;
+    \item ЕСЛИ error = too\_close И delta = steady ТО speed = slow;
+    \item ЕСЛИ error = too\_close И delta = moving\_away ТО speed = medium;
+    \item ЕСЛИ error = normal И delta = approaching ТО speed = slow;
+    \item ЕСЛИ error = normal И delta = steady ТО speed = medium;
+    \item ЕСЛИ error = normal И delta = moving\_away ТО speed = fast;
+    \item ЕСЛИ error = far И delta = approaching ТО speed = medium;
+    \item ЕСЛИ error = far И delta = steady ТО speed = fast;
+    \item ЕСЛИ error = far И delta = moving\_away ТО speed = fast.
+\end{enumerate}
+
+\section{Алгоритм импликации Ларсена}
+
+Для варианта лабораторной работы используется \textbf{импликация Ларсена}:
+\[
+\mu_{B'}(y) = \alpha \times \mu_B(y),
+\]
+где \(\alpha\) — степень истинности предпосылки.
+
+В данной работе \(\alpha\) определяется как произведение степеней истинности входных условий:
+\[
+\alpha = \mu_{A_1}(x_1) \cdot \mu_{A_2}(x_2),
+\]
+что обеспечивает более плавное изменение выходного множества по сравнению с методом Мамдани, где используется минимум.
+
+\section{Алгоритм дефаззификации}
+
+Для получения четкого значения скорости используется метод \textbf{центра тяжести} (centroid):
+\[
+v = \frac{\int y \cdot \mu(y) \, dy}{\int \mu(y) \, dy}.
+\]
+
+В качестве альтернативного метода можно применять \textbf{метод среднего максимума (mean of maxima)}:
+\[
+v = \frac{y_{\min} + y_{\max}}{2}, \quad y_{\min,\max} \in \{y | \mu(y) = \max(\mu)\}.
+\]
