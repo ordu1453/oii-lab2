@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # === 1. Нечёткие переменные ===
 error = ctrl.Antecedent(np.arange(-20, 20.1, 0.5), 'error')   # м
 delta = ctrl.Antecedent(np.arange(-10, 10.1, 0.5), 'delta')   # м/с
-accel = ctrl.Consequent(np.arange(-3, 3.1, 0.1), 'accel')     # м/с²
+accel = ctrl.Consequent(np.arange(-3, 3.1, 0.1), 'accel', defuzzify_method='centroid') 
 
 # === 2. Функции принадлежности ===
 error['too_close'] = fuzz.trapmf(error.universe, [-20, -20, -10, -3])
