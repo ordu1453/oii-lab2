@@ -1,0 +1,1 @@
+def __init__(self, antecedent=None, consequent=None, label=None, and_func=np.fmin, or_func=np.fmax):

@@ -3,134 +3,99 @@ import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
 
-# === 1. Нечёткие переменные ===
-error = ctrl.Antecedent(np.arange(-20, 20.1, 0.5), 'error')   # м
-delta = ctrl.Antecedent(np.arange(-10, 10.1, 0.5), 'delta')   # м/с
-accel = ctrl.Consequent(np.arange(-3, 3.1, 0.1), 'accel', defuzzify_method='centroid') 
+distance_error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'distance_error')
+delta_distance = ctrl.Antecedent(np.arange(-5, 5.1, 0.1), 'delta_distance')
+v_follower = ctrl.Consequent(np.arange(0, 30.1, 0.1), 'v_follower')
 
-# === 2. Функции принадлежности ===
-error['too_close'] = fuzz.trapmf(error.universe, [-20, -20, -10, -3])
-error['normal']    = fuzz.trimf(error.universe, [-4, 0, 4])  
-error['far']       = fuzz.trapmf(error.universe, [3, 10, 20, 20])
+distance_error['Negative'] = fuzz.trimf(distance_error.universe, [-10, -5, 0])
+distance_error['Zero'] = fuzz.trimf(distance_error.universe, [-2, 0, 2])
+distance_error['Positive'] = fuzz.trimf(distance_error.universe, [0, 5, 10])
 
-delta['approaching']   = fuzz.trapmf(delta.universe, [-10, -10, -2, 0])
-delta['steady']        = fuzz.trimf(delta.universe, [-1, 0, 1])
-delta['moving_away']   = fuzz.trapmf(delta.universe, [0, 2, 10, 10])
+delta_distance['Negative'] = fuzz.trimf(delta_distance.universe, [-5, -2, 0])
+delta_distance['Zero'] = fuzz.trimf(delta_distance.universe, [-1, 0, 1])
+delta_distance['Positive'] = fuzz.trimf(delta_distance.universe, [0, 2, 5])
 
-accel['brake']       = fuzz.trapmf(accel.universe, [-3, -3, -1.5, -0.5])
-accel['hold']        = fuzz.trimf(accel.universe, [-0.5, 0, 0.5])
-accel['accelerate']  = fuzz.trapmf(accel.universe, [0.3, 1.5, 3, 3])
+v_follower['Slow'] = fuzz.trimf(v_follower.universe, [0, 0, 12])
+v_follower['Medium'] = fuzz.trimf(v_follower.universe, [8, 15, 22])
+v_follower['Fast'] = fuzz.trimf(v_follower.universe, [18, 25, 30])
 
-# === 3. Правила ===
-rules = [
-    ctrl.Rule(error['too_close'] & delta['approaching'], accel['brake']),
-    ctrl.Rule(error['too_close'] & delta['steady'], accel['brake']),
-    ctrl.Rule(error['too_close'] & delta['moving_away'], accel['hold']),
-    ctrl.Rule(error['normal'] & delta['approaching'], accel['brake']),
-    ctrl.Rule(error['normal'] & delta['steady'], accel['hold']),
-    ctrl.Rule(error['normal'] & delta['moving_away'], accel['accelerate']),
-    ctrl.Rule(error['far'] & delta['approaching'], accel['hold']),
-    ctrl.Rule(error['far'] & delta['steady'], accel['accelerate']),
-    ctrl.Rule(error['far'] & delta['moving_away'], accel['accelerate']),
-]
+rule1 = ctrl.Rule(distance_error['Positive'] & delta_distance['Negative'], v_follower['Slow'])
+rule2 = ctrl.Rule(distance_error['Positive'] & delta_distance['Zero'], v_follower['Slow'])
+rule3 = ctrl.Rule(distance_error['Positive'] & delta_distance['Positive'], v_follower['Medium'])
 
-accel_ctrl = ctrl.ControlSystem(rules)
+rule4 = ctrl.Rule(distance_error['Zero'] & delta_distance['Negative'], v_follower['Medium'])
+rule5 = ctrl.Rule(distance_error['Zero'] & delta_distance['Zero'], v_follower['Medium'])
+rule6 = ctrl.Rule(distance_error['Zero'] & delta_distance['Positive'], v_follower['Fast'])
 
-for rule in accel_ctrl.rules:
-    rule.activation = np.multiply
+rule7 = ctrl.Rule(distance_error['Negative'] & delta_distance['Negative'], v_follower['Medium'])
+rule8 = ctrl.Rule(distance_error['Negative'] & delta_distance['Zero'], v_follower['Fast'])
+rule9 = ctrl.Rule(distance_error['Negative'] & delta_distance['Positive'], v_follower['Fast'])
 
-accel_sim = ctrl.ControlSystemSimulation(accel_ctrl)
+fuzzy_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, rule9])
+fuzzy_sim = ctrl.ControlSystemSimulation(fuzzy_ctrl)
 
-# === 4. Параметры симуляции ===
 dt = 0.1
-T = 60.0
-steps = int(T / dt)
+t = np.arange(0, 60, dt)
+d_ref = 5.0
 
-d_ref = 25.0    # желаемое расстояние между авто (м)
-v_auto = 15.0    # начальная скорость авто (м/с)
-distance = 15.0 # начальная дистанция (м)
+# v_leader = 15 + 4 +(t*0) #np.sin(0.15 * t)
 
-integral_error = 0.0
-k_i = 100       
-i_term_min = -1.5
-i_term_max = 1.5
+# --- Ступенька ---
+v_leader = 13 + 3 * (t >= 20) 
 
-def v_lead_at_time(t):
-    if t < 20.0:
-        return 20.0
-    elif t < 40.0:
-        return 15.0
-    else:
-        return 22.0
 
-# История
-time_hist, dist_hist, v_auto_hist, v_lead_hist = [], [], [], []
-accel_fuzzy_hist, accel_total_hist, error_hist, delta_hist, integral_hist = [], [], [], [], []
 
-for i in range(steps):
-    t = i * dt
-    v_lead = v_lead_at_time(t)
+x_leader = np.zeros_like(t)
+x_follower = np.zeros_like(t)
+v_auto = np.zeros_like(t)
 
-    error_val = distance - d_ref
-    delta_val = v_lead - v_auto
+x_leader[0] = 0
+x_follower[0] = -10
+v_auto[0] = 0
+error_int = 0 
+Ki = 0.5     
 
-    accel_sim.input['error'] = error_val
-    accel_sim.input['delta'] = delta_val
-    accel_sim.compute()
-    a_fuzzy = accel_sim.output['accel']
+for i in range(1, len(t)):
+    x_leader[i] = x_leader[i-1] + v_leader[i-1] * dt
+    x_follower[i] = x_follower[i-1] + v_auto[i-1] * dt
 
-    integral_error += error_val * dt
-    i_term = k_i * integral_error
+    distance = x_leader[i] - x_follower[i]
+    error = distance - d_ref
+    delta_error = (x_leader[i] - x_leader[i-1]) - (x_follower[i] - x_follower[i-1])
 
-    if i_term > i_term_max:
-        i_term = i_term_max
-        integral_error = i_term_max / k_i
-    if i_term < i_term_min:
-        i_term = i_term_min
-        integral_error = i_term_min / k_i
+    error_int += error * dt
+    e_fuzzy = error + Ki * error_int  
 
-    a_total = a_fuzzy + i_term
-    a_total = max(-3.0, min(3.0, a_total))  # ограничение физическое
+    fuzzy_sim.input['distance_error'] = e_fuzzy
+    fuzzy_sim.input['delta_distance'] = delta_error
+    fuzzy_sim.compute()
 
-    v_auto += a_total * dt
-    distance += (v_lead - v_auto) * dt
+    v_auto[i] = 0.5 * v_auto[i-1] + 1.5* fuzzy_sim.output['v_follower']
 
-    time_hist.append(t)
-    dist_hist.append(distance)
-    v_auto_hist.append(v_auto)
-    v_lead_hist.append(v_lead)
-    accel_fuzzy_hist.append(a_fuzzy)
-    accel_total_hist.append(a_total)
-    error_hist.append(error_val)
-    delta_hist.append(delta_val)
-    integral_hist.append(i_term)
+plt.figure(figsize=(12, 8))
 
-steady_start = int(45.0 / dt) 
-steady_errors = np.array(error_hist[steady_start:])
-print("Средняя ошибка: {:.3f} м".format(np.mean(steady_errors)))
-print("Макс абс ошибка: {:.3f} м".format(np.max(np.abs(steady_errors))))
+plt.subplot(3, 1, 1)
+plt.plot(t, [x_leader[i] - x_follower[i] - d_ref for i in range(len(t))])
+plt.title('Ошибка по дистанции')
+plt.ylabel('Ошибка (м)')
+plt.grid()
 
-# === 7. Графики ===
+plt.subplot(3, 1, 2)
+plt.plot(t, x_leader, label='Лидер')
+plt.plot(t, x_follower, label='Автопилот')
+plt.title('Координаты автомобилей')
+plt.ylabel('Позиция (м)')
+plt.legend()
+plt.grid()
 
-# --- Окно 1: дистанция ---
-plt.figure(figsize=(8, 5))
-plt.plot(time_hist, dist_hist)
-plt.axhline(d_ref, linestyle='--')
-plt.ylabel('Дистанция (м)')
-plt.xlabel('Время (с)')
-plt.title('Изменение дистанции во времени')
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-# --- Окно 2: скорости ---
-plt.figure(figsize=(8, 5))
-plt.plot(time_hist, v_auto_hist, label='Автопилот')
-plt.plot(time_hist, v_lead_hist, label='Ведущее авто', linestyle='--')
+plt.subplot(3, 1, 3)
+plt.plot(t, v_leader, label='V лидера')
+plt.plot(t, v_auto, label='V автопилота')
+plt.title('Скорости автомобилей')
 plt.ylabel('Скорость (м/с)')
 plt.xlabel('Время (с)')
-plt.title('Скорости автомобилей во времени')
 plt.legend()
-plt.grid(True)
+plt.grid()
+
 plt.tight_layout()
 plt.show()

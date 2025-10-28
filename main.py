@@ -11,13 +11,19 @@ distance_error['Negative'] = fuzz.trimf(distance_error.universe, [-10, -5, 0])
 distance_error['Zero'] = fuzz.trimf(distance_error.universe, [-2, 0, 2])
 distance_error['Positive'] = fuzz.trimf(distance_error.universe, [0, 5, 10])
 
+distance_error.view()
+
 delta_distance['Negative'] = fuzz.trimf(delta_distance.universe, [-5, -2, 0])
 delta_distance['Zero'] = fuzz.trimf(delta_distance.universe, [-1, 0, 1])
 delta_distance['Positive'] = fuzz.trimf(delta_distance.universe, [0, 2, 5])
 
+delta_distance.view()
+
 v_follower['Slow'] = fuzz.trimf(v_follower.universe, [0, 0, 12])
 v_follower['Medium'] = fuzz.trimf(v_follower.universe, [8, 15, 22])
 v_follower['Fast'] = fuzz.trimf(v_follower.universe, [18, 25, 30])
+
+v_follower.view()
 
 rule1 = ctrl.Rule(distance_error['Positive'] & delta_distance['Negative'], v_follower['Slow'])
 rule2 = ctrl.Rule(distance_error['Positive'] & delta_distance['Zero'], v_follower['Slow'])
