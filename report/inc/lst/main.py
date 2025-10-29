@@ -2,6 +2,8 @@ import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
+import time
+
 
 distance_error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'distance_error')
 delta_distance = ctrl.Antecedent(np.arange(-5, 5.1, 0.1), 'delta_distance')
@@ -55,6 +57,7 @@ v_auto[0] = 0
 error_int = 0
 Ki = 0.5
 
+start = time.time()
 for i in range(1, len(t)):
     x_leader[i] = x_leader[i-1] + v_leader[i-1] * dt
     x_follower[i] = x_follower[i-1] + v_auto[i-1] * dt
@@ -71,6 +74,7 @@ for i in range(1, len(t)):
     fuzzy_sim.compute()
 
     v_auto[i] = 0.5 * v_auto[i-1] + 1.5* fuzzy_sim.output['v_autopilot']
+end = time.time()
 
 # График ошибки по дистанции
 plt.figure(figsize=(8, 5))
@@ -103,6 +107,7 @@ plt.legend()
 plt.grid()
 plt.show()
 
+
 distance_errors = np.array([x_leader[i] - x_follower[i] - d_ref for i in range(len(t))])
 
 mask = (t >= 5) & (t <= 50)
@@ -110,3 +115,4 @@ mask = (t >= 5) & (t <= 50)
 rmse_interval = np.sqrt(np.mean(distance_errors[mask]**2))
 
 print(f"Среднеквадратичная ошибка: {rmse_interval:.4f} м")
+print(f"Время выполнения: {end - start:.4f} с")
