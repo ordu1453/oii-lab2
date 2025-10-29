@@ -109,13 +109,10 @@ plt.show()
 
 # print(f"Среднеквадратичная ошибка (RMSE): {rmse:.4f} м")
 
-# Расчет среднеквадратичной ошибки только для интервала времени 10–50 с
 distance_errors = np.array([x_leader[i] - x_follower[i] - d_ref for i in range(len(t))])
 
-# Индексы, где t находится в нужном диапазоне
 mask = (t >= 5) & (t <= 50)
 
-# Расчет RMSE только на выбранном промежутке
 rmse_interval = np.sqrt(np.mean(distance_errors[mask]**2))
 
 print(f"Среднеквадратичная ошибка (RMSE) на интервале 5–50 с: {rmse_interval:.4f} м")
