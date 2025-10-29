@@ -16,3 +16,5 @@ report/inc/img/tux.png
 report/inc/img/tuz.png
 report/inc/lst/gar.py
 report/inc/lst/gen.py
+report/report.fdb_latexmk
+report/report.fls
