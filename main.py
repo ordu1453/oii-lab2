@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 distance_error = ctrl.Antecedent(np.arange(-10, 10.1, 0.1), 'distance_error')
 delta_distance = ctrl.Antecedent(np.arange(-5, 5.1, 0.1), 'delta_distance')
-v_follower = ctrl.Consequent(np.arange(0, 30.1, 0.1), 'v_follower', defuzzify_method="centroid")
+v_autopilot = ctrl.Consequent(np.arange(0, 30.1, 0.1), 'v_autopilot', defuzzify_method="centroid")
 
 distance_error['Negative'] = fuzz.trimf(distance_error.universe, [-10, -5, 0])
 distance_error['Zero'] = fuzz.trimf(distance_error.universe, [-2, 0, 2])
@@ -19,31 +19,31 @@ delta_distance['Positive'] = fuzz.trimf(delta_distance.universe, [0, 2, 5])
 
 # delta_distance.view()
 
-v_follower['Slow'] = fuzz.trimf(v_follower.universe, [0, 0, 12])
-v_follower['Medium'] = fuzz.trimf(v_follower.universe, [8, 15, 22])
-v_follower['Fast'] = fuzz.trimf(v_follower.universe, [18, 30, 30])
+v_autopilot['Slow'] = fuzz.trimf(v_autopilot.universe, [0, 0, 12])
+v_autopilot['Medium'] = fuzz.trimf(v_autopilot.universe, [8, 15, 22])
+v_autopilot['Fast'] = fuzz.trimf(v_autopilot.universe, [18, 30, 30])
 
-# v_follower.view()
+# v_autopilot.view()
 
-rule1 = ctrl.Rule(distance_error['Positive'] & delta_distance['Negative'], v_follower['Slow'])
-rule2 = ctrl.Rule(distance_error['Positive'] & delta_distance['Zero'], v_follower['Slow'])
-rule3 = ctrl.Rule(distance_error['Positive'] & delta_distance['Positive'], v_follower['Medium'])
+rule1 = ctrl.Rule(distance_error['Positive'] & delta_distance['Negative'], v_autopilot['Slow'])
+rule2 = ctrl.Rule(distance_error['Positive'] & delta_distance['Zero'], v_autopilot['Slow'])
+rule3 = ctrl.Rule(distance_error['Positive'] & delta_distance['Positive'], v_autopilot['Medium'])
 
-rule4 = ctrl.Rule(distance_error['Zero'] & delta_distance['Negative'], v_follower['Medium'])
-rule5 = ctrl.Rule(distance_error['Zero'] & delta_distance['Zero'], v_follower['Medium'])
-rule6 = ctrl.Rule(distance_error['Zero'] & delta_distance['Positive'], v_follower['Fast'])
+rule4 = ctrl.Rule(distance_error['Zero'] & delta_distance['Negative'], v_autopilot['Medium'])
+rule5 = ctrl.Rule(distance_error['Zero'] & delta_distance['Zero'], v_autopilot['Medium'])
+rule6 = ctrl.Rule(distance_error['Zero'] & delta_distance['Positive'], v_autopilot['Fast'])
 
-rule7 = ctrl.Rule(distance_error['Negative'] & delta_distance['Negative'], v_follower['Medium'])
-rule8 = ctrl.Rule(distance_error['Negative'] & delta_distance['Zero'], v_follower['Fast'])
-rule9 = ctrl.Rule(distance_error['Negative'] & delta_distance['Positive'], v_follower['Fast'])
+rule7 = ctrl.Rule(distance_error['Negative'] & delta_distance['Negative'], v_autopilot['Medium'])
+rule8 = ctrl.Rule(distance_error['Negative'] & delta_distance['Zero'], v_autopilot['Fast'])
+rule9 = ctrl.Rule(distance_error['Negative'] & delta_distance['Positive'], v_autopilot['Fast'])
 
 fuzzy_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, rule9])
 fuzzy_sim = ctrl.ControlSystemSimulation(fuzzy_ctrl)
 
 dt = 0.1
-t = np.arange(0, 100, dt)
+t = np.arange(0, 25, dt)
 d_ref = 5.0
-v_leader = 13 + 3 * (t >= 110)
+v_leader = 13 + 3 * (t >= 15)
 
 x_leader = np.zeros_like(t)
 x_follower = np.zeros_like(t)
@@ -70,7 +70,7 @@ for i in range(1, len(t)):
     fuzzy_sim.input['delta_distance'] = delta_error
     fuzzy_sim.compute()
 
-    v_auto[i] = 0.5 * v_auto[i-1] + 1.5* fuzzy_sim.output['v_follower']
+    v_auto[i] = 0.5 * v_auto[i-1] + 1.5* fuzzy_sim.output['v_autopilot']
 
 # График ошибки по дистанции
 plt.figure(figsize=(8, 5))
@@ -103,11 +103,6 @@ plt.legend()
 plt.grid()
 plt.show()
 
-# # Расчет среднеквадратичной ошибки
-# distance_errors = np.array([x_leader[i] - x_follower[i] - d_ref for i in range(len(t))])
-# rmse = np.sqrt(np.mean(distance_errors**2))
-
-# print(f"Среднеквадратичная ошибка (RMSE): {rmse:.4f} м")
 
 distance_errors = np.array([x_leader[i] - x_follower[i] - d_ref for i in range(len(t))])
 
@@ -115,4 +110,4 @@ mask = (t >= 5) & (t <= 50)
 
 rmse_interval = np.sqrt(np.mean(distance_errors[mask]**2))
 
-print(f"Среднеквадратичная ошибка (RMSE) на интервале 5–50 с: {rmse_interval:.4f} м")
+print(f"Среднеквадратичная ошибка: {rmse_interval:.4f} м")
